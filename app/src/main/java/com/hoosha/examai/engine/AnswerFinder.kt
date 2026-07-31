@@ -14,10 +14,17 @@ data class AnswerSuggestion(
 class AnswerFinder {
 
     private val stopWords = setOf(
-        "از", "به", "در", "با", "برای", "که", "این", "آن", "را",
-        "و", "یا", "است", "هست", "بود", "شد", "شود", "می", "یک",
-        "کدام", "کدامیک", "گزینه", "عبارت", "مورد", "موارد", "زیر",
-        "صحیح", "درست", "نادرست", "نیست", "باشد", "چه", "چرا"
+        "\u0627\u0632", "\u0628\u0647", "\u062F\u0631", "\u0628\u0627",
+        "\u0628\u0631\u0627\u06CC", "\u06A9\u0647", "\u0627\u06CC\u0646",
+        "\u0622\u0646", "\u0631\u0627", "\u0648", "\u06CC\u0627",
+        "\u0627\u0633\u062A", "\u0647\u0633\u062A", "\u0628\u0648\u062F",
+        "\u0634\u062F", "\u0634\u0648\u062F", "\u0645\u06CC", "\u06CC\u06A9",
+        "\u06A9\u062F\u0627\u0645", "\u06A9\u062F\u0627\u0645\u06CC\u06A9",
+        "\u06AF\u0632\u06CC\u0646\u0647", "\u0639\u0628\u0627\u0631\u062A",
+        "\u0645\u0648\u0631\u062F", "\u0645\u0648\u0627\u0631\u062F",
+        "\u0632\u06CC\u0631", "\u0635\u062D\u06CC\u062D", "\u062F\u0631\u0633\u062A",
+        "\u0646\u0627\u062F\u0631\u0633\u062A", "\u0646\u06CC\u0633\u062A",
+        "\u0628\u0627\u0634\u062F", "\u0686\u0647", "\u0686\u0631\u0627"
     )
 
     fun findAnswer(
@@ -28,7 +35,7 @@ class AnswerFinder {
             return AnswerSuggestion(
                 optionIndex = null,
                 confidence = 0f,
-                evidence = "ابتدا حداقل یک فایل درسی وارد کنید.",
+                evidence = "\u0627\u0628\u062A\u062F\u0627 \u062D\u062F\u0627\u0642\u0644 \u06CC\u06A9 \u0641\u0627\u06CC\u0644 \u062F\u0631\u0633\u06CC \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.",
                 sourceName = null,
                 status = "NO_SOURCE"
             )
@@ -38,7 +45,7 @@ class AnswerFinder {
             return AnswerSuggestion(
                 optionIndex = null,
                 confidence = 0f,
-                evidence = "چهار گزینه کامل از تصویر شناسایی نشد.",
+                evidence = "\u0686\u0647\u0627\u0631 \u06AF\u0632\u06CC\u0646\u0647 \u06A9\u0627\u0645\u0644 \u0627\u0632 \u062A\u0635\u0648\u06CC\u0631 \u0634\u0646\u0627\u0633\u0627\u06CC\u06CC \u0646\u0634\u062F.",
                 sourceName = null,
                 status = "INVALID_QUESTION"
             )
@@ -59,7 +66,9 @@ class AnswerFinder {
         val optionResults = question.options.mapIndexed { index, option ->
             val optionTokens = tokenize(option)
 
-            val bestMatch = rankedChunks.maxByOrNull { (chunk, questionScore) ->
+            val bestMatch = rankedChunks.maxByOrNull { pair ->
+                val chunk = pair.first
+                val questionScore = pair.second
                 val chunkTokens = tokenize(chunk.normalizedText)
                 val optionScore = overlapScore(optionTokens, chunkTokens)
                 val phraseBonus = phraseScore(option, chunk.normalizedText)
@@ -71,7 +80,6 @@ class AnswerFinder {
 
             val chunk = bestMatch?.first
             val chunkTokens = tokenize(chunk?.normalizedText.orEmpty())
-
             val optionScore = overlapScore(optionTokens, chunkTokens)
             val questionScore = overlapScore(questionTokens, chunkTokens)
             val phraseBonus = phraseScore(
@@ -96,7 +104,7 @@ class AnswerFinder {
             return AnswerSuggestion(
                 optionIndex = null,
                 confidence = 0f,
-                evidence = "پاسخ قابل اتکایی در منابع پیدا نشد.",
+                evidence = "\u067E\u0627\u0633\u062E \u0642\u0627\u0628\u0644 \u0627\u062A\u06A9\u0627\u06CC\u06CC \u062F\u0631 \u0645\u0646\u0627\u0628\u0639 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.",
                 sourceName = null,
                 status = "NOT_FOUND"
             )
@@ -147,22 +155,23 @@ class AnswerFinder {
     ): Double {
         val normalizedOption = normalize(option)
 
-        if (normalizedOption.length >= 4 &&
+        return if (
+            normalizedOption.length >= 4 &&
             normalizedDocument.contains(normalizedOption)
         ) {
-            return 1.0
+            1.0
+        } else {
+            0.0
         }
-
-        return 0.0
     }
 
     private fun normalize(text: String): String {
         return text
             .lowercase()
-            .replace('ي', 'ی')
-            .replace('ك', 'ک')
-            .replace('ۀ', 'ه')
-            .replace('ة', 'ه')
+            .replace('\u064A', '\u06CC')
+            .replace('\u0643', '\u06A9')
+            .replace('\u06C0', '\u0647')
+            .replace('\u0629', '\u0647')
             .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
@@ -176,7 +185,7 @@ class AnswerFinder {
         return if (cleaned.length <= 500) {
             cleaned
         } else {
-            cleaned.take(500).trimEnd() + "…"
+            cleaned.take(500).trimEnd() + "\u2026"
         }
     }
 
