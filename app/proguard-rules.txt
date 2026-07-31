@@ -1,0 +1,7 @@
+-keepattributes *Annotation*
+-keepattributes Signature
+
+-keep class androidx.room.** { *; }
+-dontwarn org.bouncycastle.**
+-dontwarn org.spongycastle.**
+-dontwarn javax.activation.**
