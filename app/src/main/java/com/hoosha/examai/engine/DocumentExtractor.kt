@@ -68,35 +68,80 @@ class DocumentExtractor(
             var end = minOf(start + maximumLength, cleaned.length)
 
             if (end < cleaned.length) {
-                val paragraphBreak = cleaned.lastIndexOf("\n", end)
-                val sentenceBreak = cleaned.lastIndexOfAny(
-                    charArrayOf('.', 'طں', '!', 'ط›'),
-                    end
+                val paragraphBreak = cleaned.lastIndexOf(
+                    "\n",
+                    startIndex = end
                 )
 
-                val preferredEnd = maxOf(paragraphBreak, sentenceBreak)
+                val sentenceBreak = findLastSentenceBreak(
+                    text = cleaned,
+                    startIndex = start,
+                    endIndex = end
+                )
+
+                val preferredEnd = maxOf(
+                    paragraphBreak,
+                    sentenceBreak
+                )
+
                 if (preferredEnd > start + maximumLength / 2) {
                     end = preferredEnd + 1
                 }
             }
 
-            val chunk = cleaned.substring(start, end).trim()
+            val chunk = cleaned
+                .substring(start, end)
+                .trim()
+
             if (chunk.isNotBlank()) {
                 chunks += chunk
             }
 
             if (end >= cleaned.length) break
-            start = maxOf(end - overlap, start + 1)
+
+            start = maxOf(
+                end - overlap,
+                start + 1
+            )
         }
 
         return chunks
+    }
+
+    private fun findLastSentenceBreak(
+        text: String,
+        startIndex: Int,
+        endIndex: Int
+    ): Int {
+        val sentenceEndings = setOf(
+            '.',
+            '?',
+            '!',
+            '\u061F',
+            '\u061B'
+        )
+
+        val safeEndIndex = minOf(
+            endIndex,
+            text.lastIndex
+        )
+
+        for (index in safeEndIndex downTo startIndex) {
+            if (text[index] in sentenceEndings) {
+                return index
+            }
+        }
+
+        return -1
     }
 
     private fun extractPlainText(uri: Uri): String {
         return context.contentResolver
             .openInputStream(uri)
             ?.bufferedReader(Charsets.UTF_8)
-            ?.use { it.readText() }
+            ?.use { reader ->
+                reader.readText()
+            }
             ?: error("ظپط§غŒظ„ ظ‚ط§ط¨ظ„ ط®ظˆط§ظ†ط¯ظ† ظ†غŒط³طھ.")
     }
 
@@ -127,6 +172,7 @@ class DocumentExtractor(
                 val index = cursor.getColumnIndex(
                     OpenableColumns.DISPLAY_NAME
                 )
+
                 if (index >= 0) {
                     return cursor.getString(index)
                 }
@@ -138,13 +184,17 @@ class DocumentExtractor(
 
     private fun inferMimeType(displayName: String): String {
         return when {
-            displayName.endsWith(".pdf", ignoreCase = true) ->
+            displayName.endsWith(".pdf", ignoreCase = true) -> {
                 "application/pdf"
+            }
 
-            displayName.endsWith(".txt", ignoreCase = true) ->
+            displayName.endsWith(".txt", ignoreCase = true) -> {
                 "text/plain"
+            }
 
-            else -> "text/plain"
+            else -> {
+                "text/plain"
+            }
         }
     }
 }
