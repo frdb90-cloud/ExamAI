@@ -36,7 +36,7 @@ class DocumentExtractor(
             }
 
             require(text.isNotBlank()) {
-                "ظ…طھظ†غŒ ط§ط² ظپط§غŒظ„ ط§ط³طھط®ط±ط§ط¬ ظ†ط´ط¯."
+                "\u0645\u062A\u0646\u06CC \u0627\u0632 \u0641\u0627\u06CC\u0644 \u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0646\u0634\u062F."
             }
 
             ExtractedDocument(
@@ -89,9 +89,7 @@ class DocumentExtractor(
                 }
             }
 
-            val chunk = cleaned
-                .substring(start, end)
-                .trim()
+            val chunk = cleaned.substring(start, end).trim()
 
             if (chunk.isNotBlank()) {
                 chunks += chunk
@@ -142,7 +140,9 @@ class DocumentExtractor(
             ?.use { reader ->
                 reader.readText()
             }
-            ?: error("ظپط§غŒظ„ ظ‚ط§ط¨ظ„ ط®ظˆط§ظ†ط¯ظ† ظ†غŒط³طھ.")
+            ?: error(
+                "\u0641\u0627\u06CC\u0644 \u0642\u0627\u0628\u0644 \u062E\u0648\u0627\u0646\u062F\u0646 \u0646\u06CC\u0633\u062A."
+            )
     }
 
     private fun extractPdf(uri: Uri): String {
@@ -153,7 +153,9 @@ class DocumentExtractor(
                 input.copyTo(output)
                 output.toByteArray()
             }
-            ?: error("ظپط§غŒظ„ PDF ظ‚ط§ط¨ظ„ ط®ظˆط§ظ†ط¯ظ† ظ†غŒط³طھ.")
+            ?: error(
+                "\u0641\u0627\u06CC\u0644 PDF \u0642\u0627\u0628\u0644 \u062E\u0648\u0627\u0646\u062F\u0646 \u0646\u06CC\u0633\u062A."
+            )
 
         return PDDocument.load(bytes).use { document ->
             PDFTextStripper().getText(document)
@@ -179,7 +181,8 @@ class DocumentExtractor(
             }
         }
 
-        return uri.lastPathSegment ?: "ظ…ظ†ط¨ط¹ ط¯ط±ط³غŒ"
+        return uri.lastPathSegment
+            ?: "\u0645\u0646\u0628\u0639 \u062F\u0631\u0633\u06CC"
     }
 
     private fun inferMimeType(displayName: String): String {
