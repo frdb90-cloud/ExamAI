@@ -9,11 +9,13 @@ data class ParsedQuestion(
 class QuestionParser {
 
     private val questionStartPattern = Regex(
-        """^\s*([۰-۹0-9]{1,3})\s*[\.\-ـ\):：]\s*(.*)$"""
+        "^\\s*([\\u06F0-\\u06F90-9]{1,3})\\s*[\\.\\-\\u0640\\):\\uFF1A]\\s*(.*)$"
     )
 
     private val optionPattern = Regex(
-        """^\s*(?:[\(\[]?\s*)?([الفبپتثجچدABCDabcd1-4۱-۴])(?:\s*[\)\]\.\-ـ:：])\s*(.+)$"""
+        "^\\s*(?:[\\(\\[]?\\s*)?([\\u0627\\u0644\\u0641\\u0628\\u067E\\u062A\\u062B\\u062C\\u0686\\u062F"
+            + "ABCDabcd1-4\\u06F1-\\u06F4])"
+            + "(?:\\s*[\\)\\]\\.\\-\\u0640:\\uFF1A])\\s*(.+)$"
     )
 
     fun parse(rawText: String): List<ParsedQuestion> {
@@ -92,7 +94,8 @@ class QuestionParser {
                 questionParts += line
             } else {
                 val lastIndex = options.lastIndex
-                options[lastIndex] = "${options[lastIndex]} $line".trim()
+                options[lastIndex] =
+                    "${options[lastIndex]} $line".trim()
             }
         }
 
@@ -110,6 +113,7 @@ class QuestionParser {
     ): List<ParsedQuestion> {
         val optionLines = lines.mapIndexedNotNull { index, line ->
             val match = optionPattern.find(line)
+
             if (match != null) {
                 index to match.groupValues[2].trim()
             } else {
@@ -139,19 +143,36 @@ class QuestionParser {
 
     private fun normalizeLine(value: String): String {
         return value
-            .replace('ي', 'ی')
-            .replace('ك', 'ک')
+            .replace('\u064A', '\u06CC')
+            .replace('\u0643', '\u06A9')
             .replace(Regex("\\s+"), " ")
             .trim()
     }
 
     private fun convertPersianDigits(value: String): String {
-        val persian = "۰۱۲۳۴۵۶۷۸۹"
-        val english = "0123456789"
+        val persianDigits = charArrayOf(
+            '\u06F0',
+            '\u06F1',
+            '\u06F2',
+            '\u06F3',
+            '\u06F4',
+            '\u06F5',
+            '\u06F6',
+            '\u06F7',
+            '\u06F8',
+            '\u06F9'
+        )
+
+        val englishDigits = "0123456789"
 
         return value.map { character ->
-            val index = persian.indexOf(character)
-            if (index >= 0) english[index] else character
+            val index = persianDigits.indexOf(character)
+
+            if (index >= 0) {
+                englishDigits[index]
+            } else {
+                character
+            }
         }.joinToString("")
     }
 }
