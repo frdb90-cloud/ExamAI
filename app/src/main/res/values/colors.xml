@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="exam_ai_primary">#3155A6</color>
-    <color name="exam_ai_secondary">#52638F</color>
     <color name="exam_ai_background">#FAF8FF</color>
-    <color name="exam_ai_surface">#FAF8FF</color>
     <color name="exam_ai_on_primary">#FFFFFF</color>
     <color name="exam_ai_on_background">#1B1B1F</color>
 </resources>
