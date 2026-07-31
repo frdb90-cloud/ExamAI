@@ -1,6 +1,7 @@
 package com.hoosha.examai.ui
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.hoosha.examai.data.ExamAnswerEntity
@@ -52,6 +54,41 @@ import com.hoosha.examai.data.OfflineExamRepository
 import com.hoosha.examai.data.StudySourceEntity
 import kotlinx.coroutines.launch
 import java.io.File
+
+private object FaText {
+    const val APP_TITLE = "\u0622\u0632\u0645\u0648\u0646\u200C\u06CC\u0627\u0631 \u0622\u0641\u0644\u0627\u06CC\u0646"
+    const val SOURCES_TITLE = "\u06F1. \u0645\u0646\u0627\u0628\u0639 \u062F\u0631\u0633\u06CC"
+    const val SOURCES_HELP = "\u0627\u0628\u062A\u062F\u0627 \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC PDF \u06CC\u0627 TXT \u06A9\u062A\u0627\u0628\u200C\u0647\u0627 \u0648 \u062C\u0632\u0648\u0647\u200C\u0647\u0627 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F."
+    const val ADD_SOURCE = "\u0627\u0641\u0632\u0648\u062F\u0646 \u0641\u0627\u06CC\u0644 \u062F\u0631\u0633\u06CC"
+    const val NO_SOURCE = "\u0647\u0646\u0648\u0632 \u0647\u06CC\u0686 \u0645\u0646\u0628\u0639 \u062F\u0631\u0633\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A."
+    const val SOURCE_ADDED = "\u0645\u0646\u0628\u0639 \u062F\u0631\u0633\u06CC \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0627\u0636\u0627\u0641\u0647 \u0634\u062F."
+    const val SOURCE_FAILED = "\u062E\u0648\u0627\u0646\u062F\u0646 \u0641\u0627\u06CC\u0644 \u0645\u0646\u0628\u0639 \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062F."
+    const val SOURCE_DELETED = "\u0645\u0646\u0628\u0639 \u062D\u0630\u0641 \u0634\u062F."
+    const val DELETE_SOURCE = "\u062D\u0630\u0641 \u0645\u0646\u0628\u0639"
+    const val CHARACTERS = "\u0646\u0648\u06CC\u0633\u0647 \u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0634\u062F\u0647"
+
+    const val EXAM_TITLE = "\u06F2. \u062A\u0635\u0648\u06CC\u0631 \u0622\u0632\u0645\u0648\u0646"
+    const val EXAM_HELP = "\u0627\u0632 \u0628\u0631\u06AF\u0647 \u0622\u0632\u0645\u0648\u0646 \u0639\u06A9\u0633 \u0628\u06AF\u06CC\u0631\u06CC\u062F \u06CC\u0627 \u062A\u0635\u0648\u06CC\u0631 \u0645\u0648\u062C\u0648\u062F \u062F\u0631 \u06AF\u0648\u0634\u06CC \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F."
+    const val TAKE_PHOTO = "\u06AF\u0631\u0641\u062A\u0646 \u0639\u06A9\u0633 \u0622\u0632\u0645\u0648\u0646"
+    const val SELECT_IMAGE = "\u0627\u0646\u062A\u062E\u0627\u0628 \u062A\u0635\u0648\u06CC\u0631 \u0627\u0632 \u06AF\u0648\u0634\u06CC"
+    const val SOURCE_REQUIRED = "\u0628\u0631\u0627\u06CC \u0628\u0631\u0631\u0633\u06CC \u0622\u0632\u0645\u0648\u0646 \u0627\u0628\u062A\u062F\u0627 \u06CC\u06A9 \u0645\u0646\u0628\u0639 \u062F\u0631\u0633\u06CC \u0627\u0636\u0627\u0641\u0647 \u06A9\u0646\u06CC\u062F."
+    const val IMAGE_FAILED = "\u062E\u0648\u0627\u0646\u062F\u0646 \u062A\u0635\u0648\u06CC\u0631 \u0622\u0632\u0645\u0648\u0646 \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062F."
+    const val NO_QUESTION = "\u0633\u0624\u0627\u0644 \u0686\u0647\u0627\u0631\u06AF\u0632\u06CC\u0646\u0647\u200C\u0627\u06CC \u06A9\u0627\u0645\u0644\u06CC \u062F\u0631 \u062A\u0635\u0648\u06CC\u0631 \u0634\u0646\u0627\u0633\u0627\u06CC\u06CC \u0646\u0634\u062F."
+    const val QUESTIONS_CHECKED = "\u0633\u0624\u0627\u0644 \u0628\u0631\u0631\u0633\u06CC \u0634\u062F."
+
+    const val RESULTS_TITLE = "\u06F3. \u067E\u0627\u0633\u062E\u200C\u0647\u0627\u06CC \u067E\u06CC\u0634\u0646\u0647\u0627\u062F\u06CC"
+    const val QUESTION = "\u0633\u0624\u0627\u0644"
+    const val SUGGESTED_ANSWER = "\u067E\u0627\u0633\u062E \u067E\u06CC\u0634\u0646\u0647\u0627\u062F\u06CC: \u06AF\u0632\u06CC\u0646\u0647"
+    const val CONFIDENCE = "\u0627\u0637\u0645\u06CC\u0646\u0627\u0646 \u062A\u0642\u0631\u06CC\u0628\u06CC"
+    const val SOURCE = "\u0645\u0646\u0628\u0639"
+    const val UNKNOWN = "\u0646\u0627\u0645\u0634\u062E\u0635"
+    const val PROCESSING = "\u062F\u0631 \u062D\u0627\u0644 \u067E\u0631\u062F\u0627\u0632\u0634\u2026"
+
+    const val OPTION_A = "\u0627\u0644\u0641"
+    const val OPTION_B = "\u0628"
+    const val OPTION_C = "\u062C"
+    const val OPTION_D = "\u062F"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,8 +100,7 @@ fun ExamApp() {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val sources by repository.observeSources()
-        .collectAsState(initial = emptyList())
+    val sources by repository.observeSources().collectAsState(initial = emptyList())
 
     var answers by remember {
         mutableStateOf<List<ExamAnswerEntity>>(emptyList())
@@ -82,17 +118,15 @@ fun ExamApp() {
                 answers = result.answers
 
                 if (result.answers.isEmpty()) {
-                    snackbarHostState.showSnackbar(
-                        "ط³ط¤ط§ظ„ ع†ظ‡ط§ط±ع¯ط²غŒظ†ظ‡â€Œط§غŒ ع©ط§ظ…ظ„غŒ ط¯ط± طھطµظˆغŒط± ط´ظ†ط§ط³ط§غŒغŒ ظ†ط´ط¯."
-                    )
+                    snackbarHostState.showSnackbar(FaText.NO_QUESTION)
                 } else {
                     snackbarHostState.showSnackbar(
-                        "${result.answers.size} ط³ط¤ط§ظ„ ط¨ط±ط±ط³غŒ ط´ط¯."
+                        "${result.answers.size} ${FaText.QUESTIONS_CHECKED}"
                     )
                 }
             }.onFailure { error ->
                 snackbarHostState.showSnackbar(
-                    error.message ?: "ط®ظˆط§ظ†ط¯ظ† طھطµظˆغŒط± ط¢ط²ظ…ظˆظ† ظ†ط§ظ…ظˆظپظ‚ ط¨ظˆط¯."
+                    error.message ?: FaText.IMAGE_FAILED
                 )
             }
 
@@ -112,12 +146,10 @@ fun ExamApp() {
                 runCatching {
                     repository.importSource(uri)
                 }.onSuccess {
-                    snackbarHostState.showSnackbar(
-                        "ظ…ظ†ط¨ط¹ ط¯ط±ط³غŒ ط¨ط§ ظ…ظˆظپظ‚غŒطھ ط§ط¶ط§ظپظ‡ ط´ط¯."
-                    )
+                    snackbarHostState.showSnackbar(FaText.SOURCE_ADDED)
                 }.onFailure { error ->
                     snackbarHostState.showSnackbar(
-                        error.message ?: "ط®ظˆط§ظ†ط¯ظ† ظپط§غŒظ„ ظ…ظ†ط¨ط¹ ظ†ط§ظ…ظˆظپظ‚ ط¨ظˆط¯."
+                        error.message ?: FaText.SOURCE_FAILED
                     )
                 }
 
@@ -148,7 +180,10 @@ fun ExamApp() {
         topBar = {
             TopAppBar(
                 title = {
-                    Text("ط¢ط²ظ…ظˆظ†â€ŒغŒط§ط± ط¢ظپظ„ط§غŒظ†")
+                    PersianText(
+                        text = FaText.APP_TITLE,
+                        style = MaterialTheme.typography.titleLarge
+                    )
                 }
             )
         },
@@ -170,14 +205,14 @@ fun ExamApp() {
                 item {
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    Text(
-                        text = "غ±. ظ…ظ†ط§ط¨ط¹ ط¯ط±ط³غŒ",
+                    PersianText(
+                        text = FaText.SOURCES_TITLE,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
 
-                    Text(
-                        text = "ط§ط¨طھط¯ط§ ظپط§غŒظ„â€Œظ‡ط§غŒ PDF غŒط§ TXT ع©طھط§ط¨â€Œظ‡ط§ ظˆ ط¬ط²ظˆظ‡â€Œظ‡ط§ ط±ط§ ظˆط§ط±ط¯ ع©ظ†غŒط¯.",
+                    PersianText(
+                        text = FaText.SOURCES_HELP,
                         style = MaterialTheme.typography.bodyMedium
                     )
 
@@ -186,10 +221,7 @@ fun ExamApp() {
                     Button(
                         onClick = {
                             sourceLauncher.launch(
-                                arrayOf(
-                                    "application/pdf",
-                                    "text/plain"
-                                )
+                                arrayOf("application/pdf", "text/plain")
                             )
                         },
                         enabled = !isBusy,
@@ -199,17 +231,13 @@ fun ExamApp() {
                             imageVector = Icons.Default.Add,
                             contentDescription = null
                         )
-                        Text(
-                            text = " ط§ظپط²ظˆط¯ظ† ظپط§غŒظ„ ط¯ط±ط³غŒ"
-                        )
+                        PersianText(text = FaText.ADD_SOURCE)
                     }
                 }
 
                 if (sources.isEmpty()) {
                     item {
-                        InformationCard(
-                            message = "ظ‡ظ†ظˆط² ظ‡غŒع† ظ…ظ†ط¨ط¹ ط¯ط±ط³غŒ ط§ط¶ط§ظپظ‡ ظ†ط´ط¯ظ‡ ط§ط³طھ."
-                        )
+                        InformationCard(FaText.NO_SOURCE)
                     }
                 } else {
                     items(
@@ -223,7 +251,7 @@ fun ExamApp() {
                                 scope.launch {
                                     repository.deleteSource(source.id)
                                     snackbarHostState.showSnackbar(
-                                        "ظ…ظ†ط¨ط¹ ط­ط°ظپ ط´ط¯."
+                                        FaText.SOURCE_DELETED
                                     )
                                 }
                             }
@@ -235,14 +263,14 @@ fun ExamApp() {
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    Text(
-                        text = "غ². طھطµظˆغŒط± ط¢ط²ظ…ظˆظ†",
+                    PersianText(
+                        text = FaText.EXAM_TITLE,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
 
-                    Text(
-                        text = "ط§ط² ط¨ط±ع¯ظ‡ ط¢ط²ظ…ظˆظ† ط¹ع©ط³ ط¨ع¯غŒط±غŒط¯ غŒط§ طھطµظˆغŒط± ظ…ظˆط¬ظˆط¯ ط¯ط± ع¯ظˆط´غŒ ط±ط§ ط§ظ†طھط®ط§ط¨ ع©ظ†غŒط¯.",
+                    PersianText(
+                        text = FaText.EXAM_HELP,
                         style = MaterialTheme.typography.bodyMedium
                     )
 
@@ -261,7 +289,7 @@ fun ExamApp() {
                             imageVector = Icons.Default.CameraAlt,
                             contentDescription = null
                         )
-                        Text(text = " ع¯ط±ظپطھظ† ط¹ع©ط³ ط¢ط²ظ…ظˆظ†")
+                        PersianText(text = FaText.TAKE_PHOTO)
                     }
 
                     OutlinedButton(
@@ -275,12 +303,12 @@ fun ExamApp() {
                             imageVector = Icons.Default.Image,
                             contentDescription = null
                         )
-                        Text(text = " ط§ظ†طھط®ط§ط¨ طھطµظˆغŒط± ط§ط² ع¯ظˆط´غŒ")
+                        PersianText(text = FaText.SELECT_IMAGE)
                     }
 
                     if (sources.isEmpty()) {
-                        Text(
-                            text = "ط¨ط±ط§غŒ ط¨ط±ط±ط³غŒ ط¢ط²ظ…ظˆظ† ط§ط¨طھط¯ط§ غŒع© ظ…ظ†ط¨ط¹ ط¯ط±ط³غŒ ط§ط¶ط§ظپظ‡ ع©ظ†غŒط¯.",
+                        PersianText(
+                            text = FaText.SOURCE_REQUIRED,
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -291,8 +319,8 @@ fun ExamApp() {
                     item {
                         HorizontalDivider()
 
-                        Text(
-                            text = "غ³. ظ¾ط§ط³ط®â€Œظ‡ط§غŒ ظ¾غŒط´ظ†ظ‡ط§ط¯غŒ",
+                        PersianText(
+                            text = FaText.RESULTS_TITLE,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -323,7 +351,7 @@ fun ExamApp() {
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             CircularProgressIndicator()
-                            Text("ط¯ط± ط­ط§ظ„ ظ¾ط±ط¯ط§ط²ط´â€¦")
+                            PersianText(text = FaText.PROCESSING)
                         }
                     }
                 }
@@ -338,25 +366,21 @@ private fun SourceCard(
     enabled: Boolean,
     onDelete: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
+            Column(modifier = Modifier.weight(1f)) {
+                PersianText(
                     text = source.displayName,
                     fontWeight = FontWeight.Bold
                 )
 
-                Text(
-                    text = "${source.characterCount} ظ†ظˆغŒط³ظ‡ ط§ط³طھط®ط±ط§ط¬ ط´ط¯ظ‡",
+                PersianText(
+                    text = "${source.characterCount} ${FaText.CHARACTERS}",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -367,7 +391,7 @@ private fun SourceCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "ط­ط°ظپ ظ…ظ†ط¨ط¹"
+                    contentDescription = FaText.DELETE_SOURCE
                 )
             }
         }
@@ -375,55 +399,56 @@ private fun SourceCard(
 }
 
 @Composable
-private fun AnswerCard(
-    answer: ExamAnswerEntity
-) {
-    val optionLetters = listOf("ط§ظ„ظپ", "ط¨", "ط¬", "ط¯")
+private fun AnswerCard(answer: ExamAnswerEntity) {
+    val optionLetters = listOf(
+        FaText.OPTION_A,
+        FaText.OPTION_B,
+        FaText.OPTION_C,
+        FaText.OPTION_D
+    )
+
     val selectedText = answer.selectedOptionIndex
         ?.takeIf { it in optionLetters.indices }
         ?.let { optionLetters[it] }
-        ?: "ظ†ط§ظ…ط´ط®طµ"
+        ?: FaText.UNKNOWN
 
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "ط³ط¤ط§ظ„ ${answer.questionNumber}",
+            PersianText(
+                text = "${FaText.QUESTION} ${answer.questionNumber}",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
 
-            Text(answer.questionText)
-
-            Text(
+            PersianText(text = answer.questionText)
+            PersianText(
                 text = answer.optionsText,
                 style = MaterialTheme.typography.bodyMedium
             )
 
-            Text(
-                text = "ظ¾ط§ط³ط® ظ¾غŒط´ظ†ظ‡ط§ط¯غŒ: ع¯ط²غŒظ†ظ‡ $selectedText",
+            PersianText(
+                text = "${FaText.SUGGESTED_ANSWER} $selectedText",
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold
             )
 
-            Text(
-                text = "ط§ط·ظ…غŒظ†ط§ظ† طھظ‚ط±غŒط¨غŒ: ${(answer.confidence * 100).toInt()}ظھ",
+            PersianText(
+                text = "${FaText.CONFIDENCE}: ${(answer.confidence * 100).toInt()}\u066A",
                 style = MaterialTheme.typography.bodySmall
             )
 
             if (answer.sourceName != null) {
-                Text(
-                    text = "ظ…ظ†ط¨ط¹: ${answer.sourceName}",
+                PersianText(
+                    text = "${FaText.SOURCE}: ${answer.sourceName}",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold
                 )
             }
 
-            Text(
+            PersianText(
                 text = answer.evidence,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -432,22 +457,33 @@ private fun AnswerCard(
 }
 
 @Composable
-private fun InformationCard(
-    message: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
+private fun InformationCard(message: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        PersianText(
             text = message,
             modifier = Modifier.padding(16.dp)
         )
     }
 }
 
-private fun createCameraUri(
-    context: Context
-): Uri {
+@Composable
+private fun PersianText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = androidx.compose.ui.text.TextStyle.Default,
+    color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
+    fontWeight: FontWeight? = null
+) {
+    Text(
+        text = text,
+        modifier = modifier.fillMaxWidth(),
+        style = style.copy(textDirection = TextDirection.Rtl),
+        color = color,
+        fontWeight = fontWeight
+    )
+}
+
+private fun createCameraUri(context: Context): Uri {
     val imageDirectory = File(
         context.cacheDir,
         "exam_images"
@@ -475,7 +511,7 @@ private fun persistReadPermission(
     runCatching {
         context.contentResolver.takePersistableUriPermission(
             uri,
-            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
         )
     }
 }
