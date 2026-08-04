@@ -56,6 +56,8 @@ class QuestionParser {
         }
 
         return results
+           .distinctBy { it.number }
+           .sortedBy { it.number }
     }
 
     private fun parseQuestionBlock(
