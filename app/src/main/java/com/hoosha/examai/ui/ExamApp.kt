@@ -414,7 +414,9 @@ private fun AnswerCard(answer: ExamAnswerEntity) {
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             PersianText(
@@ -423,39 +425,15 @@ private fun AnswerCard(answer: ExamAnswerEntity) {
                 fontWeight = FontWeight.Bold
             )
 
-            PersianText(text = answer.questionText)
             PersianText(
-                text = answer.optionsText,
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            PersianText(
-                text = "${FaText.SUGGESTED_ANSWER} $selectedText",
+                text = "\u067E\u0627\u0633\u062E: \u06AF\u0632\u06CC\u0646\u0647 $selectedText",
                 color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
-            )
-
-            PersianText(
-                text = "${FaText.CONFIDENCE}: ${(answer.confidence * 100).toInt()}\u066A",
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            if (answer.sourceName != null) {
-                PersianText(
-                    text = "${FaText.SOURCE}: ${answer.sourceName}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            PersianText(
-                text = answer.evidence,
-                style = MaterialTheme.typography.bodySmall
             )
         }
     }
 }
-
 @Composable
 private fun InformationCard(message: String) {
     Card(modifier = Modifier.fillMaxWidth()) {
