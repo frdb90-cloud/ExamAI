@@ -13,8 +13,8 @@ android {
         applicationId = "com.hoosha.examai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -45,6 +45,10 @@ android {
                 "META-INF/NOTICE.txt"
             )
         }
+
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
@@ -71,7 +75,7 @@ dependencies {
     ksp(libs.room.compiler)
 
     implementation(libs.kotlinx.coroutines)
-    implementation(libs.mlkit.text)
+    implementation(libs.tesseract4android)
     implementation(libs.pdfbox)
     implementation(libs.androidx.documentfile)
 }
