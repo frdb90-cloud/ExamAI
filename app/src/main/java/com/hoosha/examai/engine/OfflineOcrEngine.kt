@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.roundToInt
 
 class OfflineOcrEngine {
 
@@ -23,31 +24,33 @@ class OfflineOcrEngine {
     ): String {
         return withContext(Dispatchers.IO) {
             val sourceBitmap = decodeBitmap(context, uri)
+            val preparedBitmap = prepareForOcr(sourceBitmap)
 
             try {
-                val preparedBitmap = prepareForOcr(sourceBitmap)
-
-                try {
-                    recognizeBitmap(context, preparedBitmap)
-                } finally {
-                    if (preparedBitmap !== sourceBitmap) {
-                        preparedBitmap.recycle()
-                    }
-                }
+                recognizeInHorizontalSections(
+                    context = context,
+                    bitmap = preparedBitmap
+                )
             } finally {
-                sourceBitmap.recycle()
+                if (preparedBitmap !== sourceBitmap) {
+                    preparedBitmap.recycle()
+                }
+
+                if (!sourceBitmap.isRecycled) {
+                    sourceBitmap.recycle()
+                }
             }
         }
     }
 
-    private fun recognizeBitmap(
+    private fun recognizeInHorizontalSections(
         context: Context,
         bitmap: Bitmap
     ): String {
         val dataDirectory = prepareLanguageData(context)
         val tessBaseApi = TessBaseAPI()
 
-        return try {
+        try {
             val initialized = tessBaseApi.init(
                 dataDirectory.absolutePath,
                 LANGUAGE
@@ -58,7 +61,7 @@ class OfflineOcrEngine {
             }
 
             tessBaseApi.pageSegMode =
-                TessBaseAPI.PageSegMode.PSM_AUTO
+                TessBaseAPI.PageSegMode.PSM_SINGLE_BLOCK
 
             tessBaseApi.setVariable(
                 "preserve_interword_spaces",
@@ -70,25 +73,198 @@ class OfflineOcrEngine {
                 "300"
             )
 
-            tessBaseApi.setImage(bitmap)
+            val sectionHeight = (
+                bitmap.height.toFloat() / SECTION_COUNT
+            ).roundToInt().coerceAtLeast(1)
 
-            val recognizedText = tessBaseApi.utF8Text
-                ?.replace('\u064A', '\u06CC')
-                ?.replace('\u0643', '\u06A9')
-                ?.replace("\r\n", "\n")
-                ?.replace(Regex("[ \\t]+"), " ")
-                ?.replace(Regex("\\n{3,}"), "\n\n")
-                ?.trim()
-                .orEmpty()
+            val overlapHeight = (
+                sectionHeight.toFloat() * SECTION_OVERLAP
+            ).roundToInt()
 
-            check(recognizedText.isNotBlank()) {
+            val recognizedSections = mutableListOf<String>()
+
+            for (sectionIndex in 0 until SECTION_COUNT) {
+                val nominalTop = sectionIndex * sectionHeight
+
+                val cropTop = if (sectionIndex == 0) {
+                    0
+                } else {
+                    (nominalTop - overlapHeight)
+                        .coerceAtLeast(0)
+                }
+
+                val nominalBottom = if (
+                    sectionIndex == SECTION_COUNT - 1
+                ) {
+                    bitmap.height
+                } else {
+                    (sectionIndex + 1) * sectionHeight
+                }
+
+                val cropBottom = if (
+                    sectionIndex == SECTION_COUNT - 1
+                ) {
+                    bitmap.height
+                } else {
+                    (nominalBottom + overlapHeight)
+                        .coerceAtMost(bitmap.height)
+                }
+
+                val cropHeight = cropBottom - cropTop
+
+                if (cropHeight <= 0) {
+                    continue
+                }
+
+                val sectionBitmap = Bitmap.createBitmap(
+                    bitmap,
+                    0,
+                    cropTop,
+                    bitmap.width,
+                    cropHeight
+                )
+
+                try {
+                    tessBaseApi.setImage(sectionBitmap)
+
+                    val sectionText = normalizeRecognizedText(
+                        tessBaseApi.utF8Text.orEmpty()
+                    )
+
+                    if (sectionText.isNotBlank()) {
+                        recognizedSections += sectionText
+                    }
+
+                    tessBaseApi.clear()
+                } finally {
+                    sectionBitmap.recycle()
+                }
+            }
+
+            val result = removeDuplicateLines(
+                recognizedSections.joinToString("\n")
+            )
+
+            check(result.isNotBlank()) {
                 "\u0645\u062A\u0646\u06CC \u062F\u0631 \u062A\u0635\u0648\u06CC\u0631 \u0634\u0646\u0627\u0633\u0627\u06CC\u06CC \u0646\u0634\u062F."
             }
 
-            recognizedText
+            return result
         } finally {
             tessBaseApi.recycle()
         }
+    }
+
+    private fun normalizeRecognizedText(
+        value: String
+    ): String {
+        return value
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .replace('\u064A', '\u06CC')
+            .replace('\u0643', '\u06A9')
+            .replace('\u06C0', '\u0647')
+            .replace('\u200F', ' ')
+            .replace('\u200E', ' ')
+            .replace('\u202A', ' ')
+            .replace('\u202B', ' ')
+            .replace('\u202C', ' ')
+            .replace(Regex("[ \\t]+"), " ")
+            .replace(Regex(" *\\n *"), "\n")
+            .replace(Regex("\\n{3,}"), "\n\n")
+            .trim()
+    }
+
+    private fun removeDuplicateLines(
+        value: String
+    ): String {
+        val acceptedLines = mutableListOf<String>()
+        val normalizedLines = mutableListOf<String>()
+
+        value.lines().forEach { originalLine ->
+            val cleanLine = originalLine
+                .replace(Regex("\\s+"), " ")
+                .trim()
+
+            if (cleanLine.isBlank()) {
+                return@forEach
+            }
+
+            val comparisonLine = normalizeForComparison(
+                cleanLine
+            )
+
+            val duplicate = normalizedLines
+                .takeLast(DUPLICATE_LOOKBACK)
+                .any { previousLine ->
+                    previousLine == comparisonLine ||
+                        similarity(previousLine, comparisonLine) >=
+                        DUPLICATE_SIMILARITY
+                }
+
+            if (!duplicate) {
+                acceptedLines += cleanLine
+                normalizedLines += comparisonLine
+            }
+        }
+
+        return acceptedLines.joinToString("\n")
+    }
+
+    private fun normalizeForComparison(
+        value: String
+    ): String {
+        return value
+            .lowercase()
+            .replace('\u064A', '\u06CC')
+            .replace('\u0643', '\u06A9')
+            .replace(Regex("[^\\p{L}\\p{N}]"), "")
+            .trim()
+    }
+
+    private fun similarity(
+        first: String,
+        second: String
+    ): Double {
+        if (first.isBlank() || second.isBlank()) {
+            return 0.0
+        }
+
+        if (first == second) {
+            return 1.0
+        }
+
+        val shorter = if (
+            first.length <= second.length
+        ) {
+            first
+        } else {
+            second
+        }
+
+        val longer = if (
+            first.length > second.length
+        ) {
+            first
+        } else {
+            second
+        }
+
+        if (shorter.length < MINIMUM_DUPLICATE_LENGTH) {
+            return 0.0
+        }
+
+        if (longer.contains(shorter)) {
+            return shorter.length.toDouble() /
+                longer.length.toDouble()
+        }
+
+        val commonCharacters = shorter.count { character ->
+            character in longer
+        }
+
+        return commonCharacters.toDouble() /
+            longer.length.toDouble()
     }
 
     private fun prepareLanguageData(
@@ -110,20 +286,32 @@ class OfflineOcrEngine {
             }
         }
 
-        val destination = File(
+        val destinationFile = File(
             tessDataDirectory,
             TRAINED_DATA_FILE
         )
 
-        val assetSize = runCatching {
-            context.assets
-                .open(ASSET_PATH)
-                .use { it.available().toLong() }
-        }.getOrDefault(-1L)
+        val assetLength = context.assets
+            .open(ASSET_PATH)
+            .use { input ->
+                var totalLength = 0L
+                val buffer = ByteArray(COPY_BUFFER_SIZE)
 
-        val mustCopy = !destination.exists() ||
-            destination.length() == 0L ||
-            (assetSize > 0L && destination.length() != assetSize)
+                while (true) {
+                    val count = input.read(buffer)
+
+                    if (count < 0) {
+                        break
+                    }
+
+                    totalLength += count
+                }
+
+                totalLength
+            }
+
+        val mustCopy = !destinationFile.exists() ||
+            destinationFile.length() != assetLength
 
         if (mustCopy) {
             val temporaryFile = File(
@@ -138,17 +326,21 @@ class OfflineOcrEngine {
                 }
             }
 
-            if (destination.exists()) {
-                destination.delete()
+            if (destinationFile.exists()) {
+                destinationFile.delete()
             }
 
-            check(temporaryFile.renameTo(destination)) {
+            check(temporaryFile.renameTo(destinationFile)) {
                 temporaryFile.delete()
+
                 "\u06A9\u067E\u06CC \u0645\u062F\u0644 OCR \u0641\u0627\u0631\u0633\u06CC \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062F."
             }
         }
 
-        check(destination.exists() && destination.length() > 0L) {
+        check(
+            destinationFile.exists() &&
+                destinationFile.length() > 0L
+        ) {
             "\u0641\u0627\u06CC\u0644 fas.traineddata \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F."
         }
 
@@ -159,21 +351,24 @@ class OfflineOcrEngine {
         context: Context,
         uri: Uri
     ): Bitmap {
-        val bytes = context.contentResolver
+        val imageBytes = context.contentResolver
             .openInputStream(uri)
-            ?.use { it.readBytes() }
+            ?.use { input ->
+                input.readBytes()
+            }
             ?: error(
                 "\u062A\u0635\u0648\u06CC\u0631 \u0642\u0627\u0628\u0644 \u062E\u0648\u0627\u0646\u062F\u0646 \u0646\u06CC\u0633\u062A."
             )
 
-        val boundsOptions = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
+        val boundsOptions =
+            BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
 
         BitmapFactory.decodeByteArray(
-            bytes,
+            imageBytes,
             0,
-            bytes.size,
+            imageBytes.size,
             boundsOptions
         )
 
@@ -189,15 +384,17 @@ class OfflineOcrEngine {
             height = boundsOptions.outHeight
         )
 
-        val decodeOptions = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
+        val decodeOptions =
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig =
+                    Bitmap.Config.ARGB_8888
+            }
 
         return BitmapFactory.decodeByteArray(
-            bytes,
+            imageBytes,
             0,
-            bytes.size,
+            imageBytes.size,
             decodeOptions
         ) ?: error(
             "\u062A\u0628\u062F\u06CC\u0644 \u062A\u0635\u0648\u06CC\u0631 \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062F."
@@ -227,26 +424,18 @@ class OfflineOcrEngine {
     private fun prepareForOcr(
         source: Bitmap
     ): Bitmap {
-        val targetWidth = when {
-            source.width < MINIMUM_OCR_WIDTH -> {
-                MINIMUM_OCR_WIDTH
-            }
-
-            source.width > MAXIMUM_OCR_WIDTH -> {
+        val targetWidth = source.width
+            .coerceIn(
+                MINIMUM_OCR_WIDTH,
                 MAXIMUM_OCR_WIDTH
-            }
-
-            else -> {
-                source.width
-            }
-        }
+            )
 
         val scale = targetWidth.toFloat() /
             source.width.toFloat()
 
         val targetHeight = (
             source.height.toFloat() * scale
-        ).toInt().coerceAtLeast(1)
+        ).roundToInt().coerceAtLeast(1)
 
         val scaledBitmap = if (
             targetWidth != source.width ||
@@ -262,13 +451,13 @@ class OfflineOcrEngine {
             source
         }
 
-        val grayscaleBitmap = Bitmap.createBitmap(
+        val preparedBitmap = Bitmap.createBitmap(
             scaledBitmap.width,
             scaledBitmap.height,
             Bitmap.Config.ARGB_8888
         )
 
-        val canvas = Canvas(grayscaleBitmap)
+        val canvas = Canvas(preparedBitmap)
         canvas.drawColor(Color.WHITE)
 
         val colorMatrix = ColorMatrix().apply {
@@ -277,9 +466,9 @@ class OfflineOcrEngine {
             postConcat(
                 ColorMatrix(
                     floatArrayOf(
-                        1.35f, 0f, 0f, 0f, -28f,
-                        0f, 1.35f, 0f, 0f, -28f,
-                        0f, 0f, 1.35f, 0f, -28f,
+                        1.45f, 0f, 0f, 0f, -38f,
+                        0f, 1.45f, 0f, 0f, -38f,
+                        0f, 0f, 1.45f, 0f, -38f,
                         0f, 0f, 0f, 1f, 0f
                     )
                 )
@@ -290,7 +479,8 @@ class OfflineOcrEngine {
             Paint.ANTI_ALIAS_FLAG or
                 Paint.FILTER_BITMAP_FLAG
         ).apply {
-            colorFilter = ColorMatrixColorFilter(colorMatrix)
+            colorFilter =
+                ColorMatrixColorFilter(colorMatrix)
         }
 
         canvas.drawBitmap(
@@ -304,18 +494,28 @@ class OfflineOcrEngine {
             scaledBitmap.recycle()
         }
 
-        return grayscaleBitmap
+        return preparedBitmap
     }
 
     private companion object {
         const val LANGUAGE = "fas"
         const val TESSERACT_DIRECTORY = "tesseract"
         const val TESSDATA_DIRECTORY = "tessdata"
-        const val TRAINED_DATA_FILE = "fas.traineddata"
-        const val ASSET_PATH = "tessdata/fas.traineddata"
+        const val TRAINED_DATA_FILE =
+            "fas.traineddata"
+        const val ASSET_PATH =
+            "tessdata/fas.traineddata"
 
-        const val MINIMUM_OCR_WIDTH = 1800
-        const val MAXIMUM_OCR_WIDTH = 2600
-        const val MAX_IMAGE_DIMENSION = 5000
+        const val SECTION_COUNT = 6
+        const val SECTION_OVERLAP = 0.20f
+
+        const val DUPLICATE_LOOKBACK = 12
+        const val DUPLICATE_SIMILARITY = 0.92
+        const val MINIMUM_DUPLICATE_LENGTH = 12
+
+        const val MINIMUM_OCR_WIDTH = 2000
+        const val MAXIMUM_OCR_WIDTH = 2800
+        const val MAX_IMAGE_DIMENSION = 6000
+        const val COPY_BUFFER_SIZE = 8192
     }
 }
