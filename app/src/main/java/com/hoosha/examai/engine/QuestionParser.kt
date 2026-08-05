@@ -8,16 +8,27 @@ data class ParsedQuestion(
 
 class QuestionParser {
 
-    private val questionStartPattern = Regex(
-        "(?m)^\\s*[\\(\\[]?\\s*([0-9\\u06F0-\\u06F9\\u0660-\\u0669]{1,3})" +
-            "\\s*[\\)\\]\\.\\-:\\uFF1A]\\s*(.+)$"
+    private val questionMarkerPattern = Regex(
+        "(?m)(?:^|\\n)\\s*" +
+            "(?:[\\(\\[\\{]\\s*)?" +
+            "([0-9\\u06F0-\\u06F9\\u0660-\\u0669]{1,2})" +
+            "\\s*(?:[\\)\\]\\}]|[\\.\\-:\\uFF1A])" +
+            "\\s*"
+    )
+
+    private val reversedQuestionMarkerPattern = Regex(
+        "(?m)(?:^|\\n)\\s*" +
+            "(?:[\\)\\]\\}]\\s*)?" +
+            "([0-9\\u06F0-\\u06F9\\u0660-\\u0669]{1,2})" +
+            "\\s*[\\(\\[\\{]" +
+            "\\s*"
     )
 
     private val optionMarkerPattern = Regex(
         "(?<![\\p{L}\\p{N}])" +
-            "[\\(\\[]?\\s*" +
-            "(الف|ا|ب|ج|د|A|B|C|D|a|b|c|d|[1-4]|[\\u06F1-\\u06F4])" +
-            "\\s*[\\)\\]\\.\\-:\\uFF1A]" +
+            "(?:[\\(\\[\\{]\\s*)?" +
+            "(ط§ظ„ظپ|ط§|ط¨|ظ¾|ط¬|ع†|ط¯|A|B|C|D|a|b|c|d)" +
+            "\\s*(?:[\\)\\]\\}]|[\\.\\-:\\uFF1A])" +
             "\\s*"
     )
 
@@ -30,203 +41,268 @@ class QuestionParser {
             return emptyList()
         }
 
-        val questionMatches = questionStartPattern
-            .findAll(normalizedText)
+        val candidates = mutableListOf<ParsedQuestion>()
+
+        parseQuestionBlocks(
+            text = normalizedText,
+            markerPattern = questionMarkerPattern
+        ).forEach(candidates::add)
+
+        parseQuestionBlocks(
+            text = normalizedText,
+            markerPattern = reversedQuestionMarkerPattern
+        ).forEach(candidates::add)
+
+        if (candidates.isEmpty()) {
+            parseQuestionWithoutNumber(
+                normalizedText
+            )?.let(candidates::add)
+        }
+
+        return candidates
+            .groupBy { it.number }
+            .mapNotNull { (_, versions) ->
+                versions.maxByOrNull {
+                    qualityScore(it)
+                }
+            }
+            .sortedBy { it.number }
+    }
+
+    private fun parseQuestionBlocks(
+        text: String,
+        markerPattern: Regex
+    ): List<ParsedQuestion> {
+        val matches = markerPattern
+            .findAll(text)
             .toList()
 
-        if (questionMatches.isEmpty()) {
-            return parseSingleQuestion(normalizedText)
+        if (matches.isEmpty()) {
+            return emptyList()
         }
 
         val results = mutableListOf<ParsedQuestion>()
 
-        questionMatches.forEachIndexed { index, match ->
-            val blockStart = match.range.first
-            val blockEnd = if (index + 1 < questionMatches.size) {
-                questionMatches[index + 1].range.first
-            } else {
-                normalizedText.length
+        matches.forEachIndexed { index, marker ->
+            val number = convertDigits(
+                marker.groupValues[1]
+            ).toIntOrNull() ?: return@forEachIndexed
+
+            if (number !in MINIMUM_QUESTION_NUMBER..
+                MAXIMUM_QUESTION_NUMBER
+            ) {
+                return@forEachIndexed
             }
 
-            val block = normalizedText
-                .substring(blockStart, blockEnd)
+            val contentStart = marker.range.last + 1
+            val contentEnd = if (index + 1 < matches.size) {
+                matches[index + 1].range.first
+            } else {
+                text.length
+            }
+
+            if (contentEnd <= contentStart) {
+                return@forEachIndexed
+            }
+
+            val content = text
+                .substring(contentStart, contentEnd)
                 .trim()
 
-            parseQuestionBlock(block)?.let(results::add)
+            parseContent(
+                number = number,
+                content = content
+            )?.let(results::add)
         }
 
         return results
-           .distinctBy { it.number }
-           .sortedBy { it.number }
     }
 
-    private fun parseQuestionBlock(
-        block: String
+    private fun parseContent(
+        number: Int,
+        content: String
     ): ParsedQuestion? {
-        val headerMatch = questionStartPattern.find(block)
-            ?: return null
-
-        val questionNumber = convertDigits(
-            headerMatch.groupValues[1]
-        ).toIntOrNull() ?: return null
-
-        val contentStart = headerMatch.groups[2]
-            ?.range
-            ?.first
-            ?: return null
-
-        val content = block
-            .substring(contentStart)
-            .trim()
-
         val optionMatches = optionMarkerPattern
             .findAll(content)
             .toList()
-            .filter { match ->
-                isLikelyOptionMarker(match.groupValues[1])
-            }
 
-        if (optionMatches.size < REQUIRED_OPTIONS) {
-            return null
-        }
-
-        val selectedMatches = chooseFourOptionMatches(
+        val selectedMarkers = findOptionSequence(
             optionMatches
         ) ?: return null
 
+        val firstMarker = selectedMarkers.first()
+
         val questionText = content
-            .substring(
-                0,
-                selectedMatches.first().range.first
-            )
+            .substring(0, firstMarker.range.first)
             .cleanPart()
 
-        if (questionText.isBlank()) {
+        if (
+            questionText.length <
+            MINIMUM_QUESTION_TEXT_LENGTH
+        ) {
             return null
         }
 
-        val options = selectedMatches.mapIndexed {
+        val options = selectedMarkers.mapIndexed {
                 index,
-                optionMatch ->
+                marker ->
 
-            val optionStart = optionMatch.range.last + 1
+            val optionStart = marker.range.last + 1
 
             val optionEnd = if (
-                index + 1 < selectedMatches.size
+                index + 1 < selectedMarkers.size
             ) {
-                selectedMatches[index + 1].range.first
+                selectedMarkers[index + 1].range.first
             } else {
-                content.length
+                findTrailingBoundary(
+                    content = content,
+                    startIndex = optionStart
+                )
             }
 
-            content
-                .substring(optionStart, optionEnd)
-                .cleanPart()
+            if (optionEnd <= optionStart) {
+                ""
+            } else {
+                content
+                    .substring(optionStart, optionEnd)
+                    .cleanPart()
+            }
         }
 
         if (
-            options.size != REQUIRED_OPTIONS ||
-            options.any { it.isBlank() }
+            options.size != REQUIRED_OPTION_COUNT ||
+            options.any {
+                it.length < MINIMUM_OPTION_LENGTH
+            }
         ) {
             return null
         }
 
         return ParsedQuestion(
-            number = questionNumber,
+            number = number,
             text = questionText,
             options = options
         )
     }
 
-    private fun chooseFourOptionMatches(
+    private fun findOptionSequence(
         matches: List<MatchResult>
     ): List<MatchResult>? {
-        if (matches.size < REQUIRED_OPTIONS) {
+        if (matches.size < REQUIRED_OPTION_COUNT) {
             return null
         }
 
-        val expectedSequences = listOf(
-            listOf("الف", "ب", "ج", "د"),
-            listOf("ا", "ب", "ج", "د"),
-            listOf("a", "b", "c", "d"),
-            listOf("1", "2", "3", "4")
-        )
+        for (start in 0..matches.size -
+            REQUIRED_OPTION_COUNT
+        ) {
+            val candidate = matches.subList(
+                start,
+                start + REQUIRED_OPTION_COUNT
+            )
 
-        for (startIndex in matches.indices) {
-            val remaining = matches.drop(startIndex)
-
-            if (remaining.size < REQUIRED_OPTIONS) {
-                break
-            }
-
-            val candidate = remaining.take(REQUIRED_OPTIONS)
             val markers = candidate.map {
-                normalizeMarker(it.groupValues[1])
+                normalizeOptionMarker(
+                    it.groupValues[1]
+                )
             }
 
-            if (expectedSequences.any { sequence ->
-                    markers == sequence
-                }
+            if (
+                markers == listOf(
+                    OPTION_A,
+                    OPTION_B,
+                    OPTION_C,
+                    OPTION_D
+                )
             ) {
                 return candidate
             }
         }
 
-        return matches.take(REQUIRED_OPTIONS)
+        return null
     }
 
-    private fun parseSingleQuestion(
-        text: String
-    ): List<ParsedQuestion> {
-        val syntheticBlock = if (
-            questionStartPattern.containsMatchIn(text)
-        ) {
-            text
-        } else {
-            "1) $text"
-        }
-
-        return listOfNotNull(
-            parseQuestionBlock(syntheticBlock)
-        )
-    }
-
-    private fun isLikelyOptionMarker(
-        marker: String
-    ): Boolean {
-        return normalizeMarker(marker) in setOf(
-            "الف",
-            "ا",
-            "ب",
-            "ج",
-            "د",
-            "a",
-            "b",
-            "c",
-            "d",
-            "1",
-            "2",
-            "3",
-            "4"
-        )
-    }
-
-    private fun normalizeMarker(
-        marker: String
+    private fun normalizeOptionMarker(
+        value: String
     ): String {
-        val normalized = marker
-            .trim()
-            .lowercase()
-            .replace('\u064A', '\u06CC')
-            .replace('\u0643', '\u06A9')
+        return when (
+            value
+                .trim()
+                .lowercase()
+                .replace('\u064A', '\u06CC')
+                .replace('\u0643', '\u06A9')
+        ) {
+            "\u0627",
+            "\u0627\u0644\u0641",
+            "a" -> OPTION_A
 
-        return when (normalized) {
-            "\u06F1", "\u0661" -> "1"
-            "\u06F2", "\u0662" -> "2"
-            "\u06F3", "\u0663" -> "3"
-            "\u06F4", "\u0664" -> "4"
-            else -> normalized
+            "\u0628",
+            "\u067E",
+            "b" -> OPTION_B
+
+            "\u062C",
+            "\u0686",
+            "c" -> OPTION_C
+
+            "\u062F",
+            "d" -> OPTION_D
+
+            else -> ""
         }
+    }
+
+    private fun findTrailingBoundary(
+        content: String,
+        startIndex: Int
+    ): Int {
+        if (startIndex >= content.length) {
+            return content.length
+        }
+
+        val remaining = content.substring(startIndex)
+
+        val nextQuestion = questionMarkerPattern.find(
+            remaining
+        )
+
+        val nextReversedQuestion =
+            reversedQuestionMarkerPattern.find(
+                remaining
+            )
+
+        val boundaries = listOfNotNull(
+            nextQuestion?.range?.first,
+            nextReversedQuestion?.range?.first
+        )
+
+        return if (boundaries.isEmpty()) {
+            content.length
+        } else {
+            startIndex + boundaries.minOrNull()!!
+        }
+    }
+
+    private fun parseQuestionWithoutNumber(
+        text: String
+    ): ParsedQuestion? {
+        return parseContent(
+            number = 1,
+            content = text
+        )
+    }
+
+    private fun qualityScore(
+        question: ParsedQuestion
+    ): Int {
+        val questionScore = question.text.length
+            .coerceAtMost(MAXIMUM_QUESTION_SCORE)
+
+        val optionScore = question.options.sumOf {
+            it.length.coerceAtMost(
+                MAXIMUM_OPTION_SCORE
+            )
+        }
+
+        return questionScore + optionScore
     }
 
     private fun normalizeDocument(
@@ -237,6 +313,8 @@ class QuestionParser {
             .replace('\r', '\n')
             .replace('\u064A', '\u06CC')
             .replace('\u0643', '\u06A9')
+            .replace('\u06C0', '\u0647')
+            .replace('\u0629', '\u0647')
             .replace('\u200F', ' ')
             .replace('\u200E', ' ')
             .replace('\u202A', ' ')
@@ -257,7 +335,12 @@ class QuestionParser {
                 '-',
                 ':',
                 '\u061B',
-                '\u060C'
+                '\u060C',
+                '\u061F',
+                '(',
+                ')',
+                '[',
+                ']'
             )
             .trim()
     }
@@ -287,6 +370,18 @@ class QuestionParser {
     }
 
     private companion object {
-        const val REQUIRED_OPTIONS = 4
+        const val OPTION_A = "A"
+        const val OPTION_B = "B"
+        const val OPTION_C = "C"
+        const val OPTION_D = "D"
+
+        const val REQUIRED_OPTION_COUNT = 4
+        const val MINIMUM_QUESTION_NUMBER = 1
+        const val MAXIMUM_QUESTION_NUMBER = 99
+        const val MINIMUM_QUESTION_TEXT_LENGTH = 5
+        const val MINIMUM_OPTION_LENGTH = 1
+
+        const val MAXIMUM_QUESTION_SCORE = 500
+        const val MAXIMUM_OPTION_SCORE = 250
     }
 }
